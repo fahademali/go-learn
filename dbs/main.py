@@ -3,6 +3,7 @@ from keycloak import KeycloakAdmin, exceptions
 from dotenv import load_dotenv
 from os import environ
 import json
+import subprocess
 
 load_dotenv()
 
@@ -16,6 +17,7 @@ ERROR_MESSAGE = "errorMessage"
 ERROR = "error"
 UNAUTHORIZED_CLIENT_ERROR="unauthorized_client"
 SECONDS_IN_DAY = 24 * 60 * 60
+namespace = "dev"
 
 config = {
     "SENDER_EMAIL_PORT": environ["SENDER_EMAIL_PORT"],
@@ -36,6 +38,8 @@ config = {
     "ADMIN_PASSWORD": environ["ADMIN_PASSWORD"],
     "UPDATE_ALL_REALM": environ["UPDATE_ALL_REALM"].lower() in ['true', '1', 't', 'y'],
     "SENDER_EMAIL_SSL": environ["SENDER_EMAIL_SSL"].lower() in ['true', '1', 't', 'y'],
+    "ENABLE_KEYCLOAK_SECRET": environ["ENABLE_KEYCLOAK_SECRET"].lower() in ['true', '1', 't', 'y'],
+    "SECRET_NAME": environ["SECRET_NAME"],
     "ADMIN_CLIENT_SECRET_KEY": environ.get("ADMIN_CLIENT_SECRET_KEY")
 }
 
@@ -117,6 +121,32 @@ def build_client():
 
 keycloak_admin = build_client()
 
+def create_secret(name, namespace, new_client_secret, admin_client_secret):
+    data = {"KEYCLOAK_ADMIN_CLIENT_ID": config["ADMIN_CLIENT_ID"],
+            "KEYCLOAK_ADMIN_CLIENT_SECRET": admin_client_secret,
+            "KEYCLOAK_LOGIN_CLIENT_ID": config["LOGIN_CLIENT_ID"],
+            "LOGIN_CLIENT_SECRET": new_client_secret}
+    
+    data_str = ','.join([f'--from-literal={k}={v}' for k, v in data.items()])
+    
+    create_cmd = f"kubectl create secret generic {name} -n {namespace} {data_str}"
+    
+    subprocess.run(create_cmd, shell=True, check=True)
+
+def secret_exists(name, namespace):
+    get_cmd = f"kubectl get secret {name} -n {namespace}"
+    result = subprocess.run(get_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    return result.returncode == 0
+
+def generate_secret(new_client_secret: str, admin_client_secret: str):
+    if not secret_exists(config["SECRET_NAME"], namespace):
+        try:
+            create_secret(config["SECRET_NAME"], namespace, new_client_secret, admin_client_secret)
+            print(f"Secret '{config["SECRET_NAME"]}' created successfully.")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to create secret: {e}")
+    else:
+        print(f"Secret '{config["SECRET_NAME"]}' already exists. Skipping creation.")
 
 def update_realm_settings(realm_name: str, payload: dict[str, Any]):
     if not config["UPDATE_ALL_REALM"]:
@@ -126,9 +156,6 @@ def update_realm_settings(realm_name: str, payload: dict[str, Any]):
     all_realms = keycloak_admin.get_realms()
     for realm in all_realms:
         keycloak_admin.update_realm(realm[REALM], payload=payload)
-
-    
-
 
 def create_client(payload: dict[str, Any]):
     internal_client_id = None
@@ -155,12 +182,18 @@ def create_client(payload: dict[str, Any]):
 
     return {
         "client_id": internal_client_id,
-        "secret_key": client_secret
+        "secret_key": client_secret["value"]
     }
 
 def update_client(internal_client_id: str, payload: dict[str, Any]):
     keycloak_admin.update_client(client_id=internal_client_id, payload=payload)
-    return True
+    client_secret = keycloak_admin.get_client_secrets(client_id=internal_client_id)
+    if (not client_secret.get("value")):
+        client_secret = keycloak_admin.generate_client_secrets(client_id=internal_client_id)    
+    return {
+        "client_id": internal_client_id,
+        "secret_key": client_secret["value"]
+    }
 
 def delete_cliet(internal_client_id: str):
     keycloak_admin.delete_client(internal_client_id)
@@ -179,8 +212,6 @@ def delete_client_role(internal_client_id: str, role_name: str):
         internal_client_id
     )
     keycloak_admin.delete_realm_roles_of_user(user_id=service_account_admin_cli[ID], roles=role)
-
-
 
 def get_internal_client_id(client_id: str):
     return keycloak_admin.get_client_id(client_id)
@@ -214,13 +245,17 @@ def main():
         is_client_created = True
         print("login client has been created")
         print("updating client admin cli")
-        update_client(internal_client_id=INTERNAL_CLIENT_ID, payload=update_client_payload)
+        admin_client = update_client(internal_client_id=INTERNAL_CLIENT_ID, payload=update_client_payload)
         is_client_updated = True
         print("client admin cli has been updated")
         print("assigning admin cli client admin role")
         assign_client_role(internal_client_id=INTERNAL_CLIENT_ID, role_name=ADMIN)
         is_role_assigned = True
         print("client admin role has been assigned to admin cli")
+
+        if config["ENABLE_KEYCLOAK_SECRET"]:
+            generate_secret(new_client_secret=new_client["secret_key"], admin_client_secret=admin_client["secret_key"])
+
     except Exception as e:
         print("failure: ",str(e))
 
@@ -244,7 +279,9 @@ def main():
         if is_realm_updated:    
             update_realm_settings(realm_name=config["REALM_NAME"], payload=initial_realm_settings)
             is_realm_updated = False
-            print("reverted realm to original settings")
+            print("reverted realm to original settings");
+
+        
 
 
 main()
