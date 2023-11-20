@@ -121,7 +121,6 @@ keycloak_admin = build_client()
 
 def update_realm_settings(realm_name: str, payload: dict[str, Any]):
     print("update_realm_settings...........")
-    # raise
     if not config["UPDATE_ALL_REALM"]:
         keycloak_admin.update_realm(realm_name, payload=payload)
         return True
@@ -137,7 +136,6 @@ def update_realm_settings(realm_name: str, payload: dict[str, Any]):
 def create_client(payload: dict[str, Any]):
     print("create_client..........")
     print(payload)
-    # raise
     internal_client_id = None
     try:
         internal_client_id = keycloak_admin.create_client(payload=payload)
@@ -163,7 +161,6 @@ def create_client(payload: dict[str, Any]):
 
 def update_client(internal_client_id: str, payload: dict[str, Any]):
     print("updating client")
-    # raise
     keycloak_admin.update_client(client_id=internal_client_id, payload=payload)
     return True
 
@@ -173,7 +170,6 @@ def delete_cliet(internal_client_id: str):
 
 def assign_client_role(internal_client_id: str, role_name: str):
     print("assign_client_role.............")
-    # raise
     role = keycloak_admin.get_realm_role(role_name)
     service_account_admin_cli = keycloak_admin.get_client_service_account_user(
         internal_client_id
@@ -243,12 +239,5 @@ def main():
         if is_realm_updated:    
             update_realm_settings(realm_name=config["REALM_NAME"], payload=initial_realm_settings)
             is_realm_updated = False
-
-   
-    # print(keycloak_admin.get_realm(config["REALM_NAME"]))
-    # update_client(internal_client_id=INTERNAL_CLIENT_ID, payload=update_client_payload)
-    # update_client(internal_client_id=INTERNAL_CLIENT_ID, payload=initial_admin_client)
-
-    # new_client = create_client(payload=create_client_payload)
 
 main()
