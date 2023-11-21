@@ -39,7 +39,7 @@ config = {
     "UPDATE_ALL_REALM": environ["UPDATE_ALL_REALM"].lower() in ['true', '1', 't', 'y'],
     "SENDER_EMAIL_SSL": environ["SENDER_EMAIL_SSL"].lower() in ['true', '1', 't', 'y'],
     "ENABLE_KEYCLOAK_SECRET": environ["ENABLE_KEYCLOAK_SECRET"].lower() in ['true', '1', 't', 'y'],
-    "SECRET_NAME": environ["SECRET_NAME"],
+    "SECRET_NAME": environ["KEYCLOAK_SECRET_NAME"],
     "ADMIN_CLIENT_SECRET_KEY": environ.get("ADMIN_CLIENT_SECRET_KEY")
 }
 
@@ -280,8 +280,5 @@ def main():
             update_realm_settings(realm_name=config["REALM_NAME"], payload=initial_realm_settings)
             is_realm_updated = False
             print("reverted realm to original settings");
-
-        
-
 
 main()
